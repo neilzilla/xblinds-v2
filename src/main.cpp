@@ -9,7 +9,8 @@
 #include <ArduinoOTA.h>
 #include <AccelStepper.h>
 #include <EEPROM.h>
-#include "Base64.h"
+#include "Base64e.h"
+
 extern "C"
 {
   #include <lwip/icmp.h>                    // needed for icmp packet definitions
@@ -31,157 +32,13 @@ void turnblinds(char* tmppos);
 void updateeeprom();
 void savestepperpresets();
 
-
-
-extern const char b64_alphabet[];
-int base64_encode(char *output, char *input, int inputLen);
-int base64_decode(char *output, char *input, int inputLen);
-int base64_enc_len(int inputLen);
-int base64_dec_len(char *input, int inputLen);
-
 void webinput();
-
-
-const char b64_alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-		"abcdefghijklmnopqrstuvwxyz"
-		"0123456789+/";
-
-/* 'Private' declarations */
-inline void a3_to_a4(unsigned char * a4, unsigned char * a3);
-inline void a4_to_a3(unsigned char * a3, unsigned char * a4);
-inline unsigned char b64_lookup(char c);
-
-int base64_encode(char *output, char *input, int inputLen) {
-	int i = 0, j = 0;
-	int encLen = 0;
-	unsigned char a3[3];
-	unsigned char a4[4];
-
-	while(inputLen--) {
-		a3[i++] = *(input++);
-		if(i == 3) {
-			a3_to_a4(a4, a3);
-
-			for(i = 0; i < 4; i++) {
-				output[encLen++] = b64_alphabet[a4[i]];
-			}
-
-			i = 0;
-		}
-	}
-
-	if(i) {
-		for(j = i; j < 3; j++) {
-			a3[j] = '\0';
-		}
-
-		a3_to_a4(a4, a3);
-
-		for(j = 0; j < i + 1; j++) {
-			output[encLen++] = b64_alphabet[a4[j]];
-		}
-
-		while((i++ < 3)) {
-			output[encLen++] = '=';
-		}
-	}
-	output[encLen] = '\0';
-	return encLen;
-}
-
-int base64_decode(char * output, char * input, int inputLen) {
-	int i = 0, j = 0;
-	int decLen = 0;
-	unsigned char a3[3];
-	unsigned char a4[4];
-
-
-	while (inputLen--) {
-		if(*input == '=') {
-			break;
-		}
-
-		a4[i++] = *(input++);
-		if (i == 4) {
-			for (i = 0; i <4; i++) {
-				a4[i] = b64_lookup(a4[i]);
-			}
-
-			a4_to_a3(a3,a4);
-
-			for (i = 0; i < 3; i++) {
-				output[decLen++] = a3[i];
-			}
-			i = 0;
-		}
-	}
-
-	if (i) {
-		for (j = i; j < 4; j++) {
-			a4[j] = '\0';
-		}
-
-		for (j = 0; j <4; j++) {
-			a4[j] = b64_lookup(a4[j]);
-		}
-
-		a4_to_a3(a3,a4);
-
-		for (j = 0; j < i - 1; j++) {
-			output[decLen++] = a3[j];
-		}
-	}
-	output[decLen] = '\0';
-	return decLen;
-}
-
-int base64_enc_len(int plainLen) {
-	int n = plainLen;
-	return (n + 2 - ((n + 2) % 3)) / 3 * 4;
-}
-
-int base64_dec_len(char * input, int inputLen) {
-	int i = 0;
-	int numEq = 0;
-	for(i = inputLen - 1; input[i] == '='; i--) {
-		numEq++;
-	}
-
-	return ((6 * inputLen) / 8) - numEq;
-}
-
-inline void a3_to_a4(unsigned char * a4, unsigned char * a3) {
-	a4[0] = (a3[0] & 0xfc) >> 2;
-	a4[1] = ((a3[0] & 0x03) << 4) + ((a3[1] & 0xf0) >> 4);
-	a4[2] = ((a3[1] & 0x0f) << 2) + ((a3[2] & 0xc0) >> 6);
-	a4[3] = (a3[2] & 0x3f);
-}
-
-inline void a4_to_a3(unsigned char * a3, unsigned char * a4) {
-	a3[0] = (a4[0] << 2) + ((a4[1] & 0x30) >> 4);
-	a3[1] = ((a4[1] & 0xf) << 4) + ((a4[2] & 0x3c) >> 2);
-	a3[2] = ((a4[2] & 0x3) << 6) + a4[3];
-}
-
-inline unsigned char b64_lookup(char c) {
-	if(c >='A' && c <='Z') return c - 'A';
-	if(c >='a' && c <='z') return c - 71;
-	if(c >='0' && c <='9') return c + 4;
-	if(c == '+') return 62;
-	if(c == '/') return 63;
-	return -1;
-}
-
-
 
 
 const bool resetEEPROM = false;
 const bool enableEEPROM = true;
 const int buttonPin = 15;                   // Physical D8 PIN on D1 mini
 size_t EEPROM_MEMORY_SIZE = 512;
-
-
-
 
 // EEPROM variables
 char xbidentifier[8] = "xBlinds";           // Pos 10, 10 bytes
@@ -541,13 +398,14 @@ void updatewifiap()
     WiFi.mode(WIFI_AP);
     Serial.println("WIFI_AP");
   
+    // this seemed to break/not be liked by diff devices
     //IPAddress local_IP(4,3,2,1);
     //IPAddress gateway(4,3,2,1);
     //IPAddress subnet(255,255,255,0);
     Serial.print("Setting soft-AP ... ");
     Serial.println(WiFi.softAP(mqtt_client_name, "chocolate", 5) ? "Soft AP ready" : "Soft AP failed!");
     delay(500);
-    //Serial.println(WiFi.softAPConfig(local_IP, gateway, subnet) ? "Soft AP configured" : "Soft AP config failed!");
+    Serial.println(WiFi.softAPConfig(local_IP, gateway, subnet) ? "Soft AP configured" : "Soft AP config failed!");
     Serial.print("Soft AP IP address: ");
     Serial.println(WiFi.softAPIP());
   } 
@@ -594,8 +452,8 @@ void setup_wifi()
     {
       delay(500);
       Serial.print(".");
-      // try 20 times then fail and reup access point
-      if(retries++ > 20){
+      // try 50 times then fail and reup access point
+      if(retries++ > 50){
         Serial.print("\nWifi unable to connect\n\nDiagnostics:\n");
         WiFi.printDiag(Serial);
         strcpy(wifiap, "on");
@@ -643,8 +501,12 @@ void connectMQTT()
   MQTTclient.setKeepAlive(90);
 
   if(validIP == true) {
+    Serial.print("Valid MQTT: ");
+    Serial.println(mqtt_server);
+
     if(pinger.Ping(mqtt_server) == true) {
-   
+      Serial.println("MQTT responded.");
+
       // Loop until we're reconnected
       while (!MQTTclient.connected()) 
       {
@@ -705,8 +567,9 @@ void connectMQTT()
     MQTTclient.subscribe(tilttopic);
     MQTTclient.loop();
     MQTTclient.setCallback(callback);
+    Serial.println("MQTT connected!");
+
   }
-  Serial.println("MQTT connected!");
 }
 
 // Populate fields on webpage via HTTP header
@@ -1388,10 +1251,11 @@ void setup()
 
 void loop() 
 {
+
+  // not sure what this does, maybe a couple cycles to get set up;
   if(initialRun >= 2) { startup = false; }
 
-  if (!MQTTclient.connected() and (!stepper.run())) 
-  {
+  if (!MQTTclient.connected() and (!stepper.run())){
     //Serial.println("Reconnecting MQTT");
     //Serial.print("SSID: ");
     //Serial.println(ssid);
@@ -1401,6 +1265,8 @@ void loop()
     //Serial.println(mqtt_valid);
     
     if((strcmp(ssid, "") != 0) and (strcmp(mqtt_server, "") != 0) and (mqtt_valid == true)) {
+      // think this reconnects mqtt if not connected
+      // initial run seems to go through a few cycles to collect missed commands
       initialRun = 0;
       connectMQTT();
     }
@@ -1410,7 +1276,7 @@ void loop()
   buttonState = digitalRead(buttonPin);
   if (buttonState == HIGH and buttonpressed == false) {
     buttonpressed = true;    
-    //toggleblinds();
+    toggleblinds();
   } else if(buttonState == LOW) {
     buttonpressed = false;
   }
